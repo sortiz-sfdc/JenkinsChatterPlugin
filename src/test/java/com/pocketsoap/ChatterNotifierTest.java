@@ -1,5 +1,6 @@
 package com.pocketsoap;
 
+import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 
 import java.io.IOException;
@@ -10,7 +11,6 @@ import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.Test;
 import org.jvnet.hudson.test.JenkinsRule;
-import org.tmatesoft.svn.core.SVNException;
 
 import com.cloudbees.plugins.credentials.Credentials;
 import com.cloudbees.plugins.credentials.CredentialsScope;
@@ -63,6 +63,32 @@ public class ChatterNotifierTest {
 		ChatterNotifier.DescriptorImpl descriptor = new ChatterNotifier.DescriptorImpl();
 		ListBoxModel listBox = descriptor.doFillCredentialsIdItems();
 		Assert.assertTrue(listBox.size() > 0);	//Theres at least 1 empty item in there
+	}
+	
+	@Test public void testValidateCredentialsIdEmpty() {
+		ChatterNotifier.DescriptorImpl descriptor = new ChatterNotifier.DescriptorImpl();
+		FormValidation error = descriptor.doCheckCredentialsId("");
+		Assert.assertTrue(error.toString().contains("ERROR:"));
+	}
+	
+	@Test public void testValidateProxyURL() {
+		ChatterNotifier.DescriptorImpl descriptor = new ChatterNotifier.DescriptorImpl();
+		
+		//Test 1: No proxy url
+		FormValidation msg = descriptor.doCheckProxyURL("");
+		Assert.assertFalse(msg.toString().contains("ERROR:"));
+		
+		//Test 2: Valid proxy url
+		msg = descriptor.doCheckProxyURL("https://myproxy.com:1234");
+		Assert.assertFalse(msg.toString().contains("ERROR:"));
+		
+		//Test 3: Invalid proxy url - no port
+		msg = descriptor.doCheckProxyURL("https://myproxy.com");
+		Assert.assertTrue(msg.toString().contains("ERROR:"));
+		
+		//Test 4: Invalid proxy url - no port (2)
+		msg = descriptor.doCheckProxyURL("https://myproxy.com:");
+		Assert.assertTrue(msg.toString().contains("ERROR:"));
 	}
 	
 	/**

@@ -28,7 +28,6 @@ import hudson.model.BuildListener;
 import hudson.model.Result;
 import hudson.model.AbstractBuild;
 import hudson.model.AbstractProject;
-import hudson.model.Hudson;
 import hudson.model.User;
 import hudson.security.ACL;
 import hudson.tasks.BuildStepDescriptor;
@@ -74,12 +73,12 @@ import com.pocketsoap.salesforce.soap.ChatterClient;
  */
 public class ChatterNotifier extends Notifier {
 	
-	private final String recordId, server, suspectMap, defaultDomain, credentialsId;
+	private final String recordId, server, suspectMap, defaultDomain, credentialsId, proxyURL;
 	private final boolean failureOnly, postRecovery, tagSuspects, publishEnForceResults;
 	private final Map<String, String> scmIdToSfdcId = new HashMap<String, String>();
 	
 	@DataBoundConstructor
-	public ChatterNotifier(String credentialsId, String recordId, String server, boolean failureOnly, boolean postRecovery, boolean tagSuspects, boolean publishEnForceResults, String defaultDomain, String suspectMap) {
+	public ChatterNotifier(String credentialsId, String recordId, String server, boolean failureOnly, boolean postRecovery, boolean tagSuspects, boolean publishEnForceResults, String defaultDomain, String suspectMap, String proxyURL) {
 		this.recordId = recordId;
 		this.server = server;
 		this.failureOnly = failureOnly;
@@ -89,6 +88,7 @@ public class ChatterNotifier extends Notifier {
 		this.defaultDomain = defaultDomain;
 		this.suspectMap = suspectMap;
 		this.credentialsId = credentialsId;
+		this.proxyURL = proxyURL;
 		
 		final String[] lines = suspectMap.split("\n");
 		for (String line : lines) {
@@ -136,6 +136,10 @@ public class ChatterNotifier extends Notifier {
 	public boolean isPublishEnForceResults() {
 		return publishEnForceResults;
 	}
+	
+	public String getProxyURL() {
+		return proxyURL;
+	}
 
 	// we'll run after being finalized, and not look at previous results
 	// so we don't need any locking here, this'll let us be used safely
@@ -156,6 +160,7 @@ public class ChatterNotifier extends Notifier {
 	@Override
 	public boolean perform(AbstractBuild<?,?> build, Launcher launcher, BuildListener listener) throws IOException, InterruptedException {
 		final Result result = build.getResult();
+		
 		if (this.failureOnly && result == Result.SUCCESS) {
 			if (!this.postRecovery || build.getPreviousBuild() == null || build.getPreviousBuild().getResult() == Result.SUCCESS) {
 				return true;
@@ -208,7 +213,15 @@ public class ChatterNotifier extends Notifier {
         	// even though we do form validation in the descriptor, the user is still allowed
         	// to save an invalid config, so we can't assume these values are good.
         	UsernamePasswordCredentials c = getCredentialsById(credentialsId);
-        	new ChatterClient(c.getUsername(), Secret.toString(c.getPassword()), server).postBuild(recordId, title, url, testHealth, suspects);
+        	
+        	ChatterClient client = new ChatterClient(c.getUsername(), Secret.toString(c.getPassword()), server);
+        			
+			//Set the proxy (if it exists)
+			if ((proxyURL != null) && (proxyURL.length() > 0)) {
+				client.setProxyURL(proxyURL);
+			}
+        	
+			client.postBuild(recordId, title, url, testHealth, suspects);
         } catch (Exception ex) {
         	ps.print("error posting to chatter : " + ex.getMessage());
         }
@@ -342,17 +355,33 @@ public class ChatterNotifier extends Notifier {
 			return FormValidation.ok();
 		}
 		
+		public FormValidation doCheckProxyURL(@QueryParameter String value) {
+			if (value != null && value.length() > 0) {
+				int httpIndex = value.indexOf("//");
+				if (httpIndex > -1) {
+					value = value.substring(httpIndex + 2);
+				}
+				
+				String[] urlPort = value.split(":");
+				if (urlPort.length != 2) {
+					return FormValidation.error("Proxy hosts must be of the form http(s)://<proxy_url>:<port>");
+				}
+			}
+			
+			return FormValidation.ok();
+		}
+		
 		public FormValidation doTestConnection(
-				@QueryParameter("username") String username,
-				@QueryParameter("password") String password,
 				@QueryParameter("recordId") String recordId,
 				@QueryParameter("server") String server, 
-				@QueryParameter("credentialsId") String credentialsId) {
-
+				@QueryParameter("credentialsId") String credentialsId, 
+				@QueryParameter("proxyURL") String proxyURL) {
+			String username = null;
+			String password = null;
+			
 			try {
 				if (credentialsId.length() > 0) {
 					UsernamePasswordCredentials c = getCredentialsById(credentialsId);
-					
 					if (c != null) {
 						username = c.getUsername();
 						password = Secret.toString(c.getPassword());
@@ -360,17 +389,25 @@ public class ChatterNotifier extends Notifier {
 				}
 				
 				ChatterClient c = new ChatterClient(username, password, server);
+				
+				//Set the proxy (if it exists)
+				if ((proxyURL != null) && (proxyURL.length() > 0)) {
+					c.setProxyURL(proxyURL);
+				}
+				
 				try {
 					c.performLogin();
 				} catch (Exception ex) {
 					return FormValidation.error("Unable to verify username/password : " + ex.getMessage());
 				}
+				
 				String postId = null;
 				try {
 					postId = c.postBuild(recordId, null, null, "temporary post to verify setup", null);
 				} catch (Exception ex) {
 					return FormValidation.error("Unable to post to chatter : " + ex.getMessage());
 				}
+				
 				try {
 					c.delete(postId);
 				} catch (Exception ex) {

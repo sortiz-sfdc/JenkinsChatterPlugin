@@ -38,6 +38,7 @@ import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamReader;
 
+import org.apache.commons.httpclient.HostConfiguration;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.methods.PostMethod;
 import org.apache.commons.httpclient.methods.RequestEntity;
@@ -64,6 +65,20 @@ public class ChatterClient {
 
 	private final CredentialsInfo credentials;
 	private SessionInfo session;
+	private String proxyURL;
+	
+	/**
+	 * Set a proxy (if there is one)
+	 * @param proxyURL
+	 */
+	public void setProxyURL(String proxyURL) {
+		int httpIndex = proxyURL.indexOf("//");
+		if (httpIndex > -1) {
+			proxyURL = proxyURL.substring(httpIndex + 2);
+		}
+		
+		this.proxyURL = proxyURL;
+	}
 
 	public String postBuild(String recordId, String title, String resultsUrl, String testHealth, Map<String, String> suspects) throws IOException, XMLStreamException, FactoryConfigurationError {
 		return postBuild(recordId, title, resultsUrl, testHealth, suspects, true);
@@ -262,6 +277,17 @@ public class ChatterClient {
 		post.setRequestEntity(req);
 
 		HttpClient http = new HttpClient();
+		
+		//Set the proxy
+		if (proxyURL != null && proxyURL.length() > 0) {
+			String[] urlPort = proxyURL.split(":");
+			if (urlPort.length == 2) {
+				HostConfiguration config = new HostConfiguration();
+				config.setProxy(urlPort[0], Integer.valueOf(urlPort[1]));
+				http.setHostConfiguration(config);
+			}
+		}
+		
 		int sc = http.executeMethod(post);
 		if (sc != 200 && sc != 500)
 			throw new IOException("request to " + serverUrl + " returned unexpected HTTP status code of " + sc + ", check configuration.");

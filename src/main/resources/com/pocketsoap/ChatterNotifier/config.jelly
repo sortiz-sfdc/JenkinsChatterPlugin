@@ -36,10 +36,18 @@
   <f:entry title="Map SCM Ids to Salesforce.com Logins" field="suspectMap">
     <f:textarea />
   </f:entry>
+  
+  <f:section title="Advanced Project Options">
+  	<f:advanced>
+    	<f:entry title="HTTPS Proxy" field="proxyURL">
+    		<f:textbox />
+  		</f:entry>
+  	</f:advanced>
+  </f:section>
 
   
   <f:validateButton
    title="Verify Settings" progress="Verifying Settings ..."
-   method="testConnection" with="credentialsId,recordId,server" />
+   method="testConnection" with="credentialsId,recordId,server,proxyURL" />
    
 </j:jelly>
